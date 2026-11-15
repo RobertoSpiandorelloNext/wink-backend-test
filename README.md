@@ -2,6 +2,8 @@
 
 REST API behind a public blog and its content management system (CMS), written for the WiNK backend test. In short: run `docker compose up --build`, open http://localhost:3000/docs, click **Authorize** and paste `wink-cms-demo-token`.
 
+**Live API:** [m368sw-3000.csb.app/docs](https://m368sw-3000.csb.app/docs/), running on CodeSandbox ([sandbox with the code](https://codesandbox.io/p/devbox/winter-dream-m368sw)). After a while without visits the sandbox goes to sleep, so the first load can take a few seconds.
+
 A PDF walkthrough of what the system does and why it is built this way is available in [English](docs/technical-documentation-en.pdf) and [Italian](docs/documentazione-tecnica-it.pdf).
 
 - **Run it:** [Quick start with Docker](#quick-start-with-docker) | [Local development](#local-development) | [CodeSandbox](#codesandbox)
@@ -59,6 +61,8 @@ On Windows PowerShell, copy the file with `Copy-Item .env.example .env`. To use 
 ## CodeSandbox
 
 The API also runs in a CodeSandbox VM Sandbox created from the GitHub repository: open `https://githubbox.com/<owner>/<repo>`, or choose "Import template" in the dashboard's import dialog and paste the repository URL. `.devcontainer/` starts Node.js 22 next to a `mongo:8.2` service, and `.codesandbox/tasks.json` installs the dependencies, starts `npm run dev` on port 3000 and loads the sample posts. No environment variable is needed: the defaults apply, including the demo CMS token. The preview opens on Swagger UI, and its "Try it out" requests go to the host serving the page.
+
+Inside the CodeSandbox editor, the preview panel shows "refused to connect". This is expected: helmet's `X-Frame-Options` header and the CSP `frame-ancestors` directive stop other sites from embedding the API's pages in a frame (a protection against clickjacking), and the editor is a different site. Open the preview in a new tab, or go straight to `https://<sandbox-id>-3000.csb.app/docs`.
 
 ## Authentication
 
