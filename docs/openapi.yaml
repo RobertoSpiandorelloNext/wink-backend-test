@@ -1,0 +1,1402 @@
+openapi: 3.1.0
+info:
+  title: WiNK Blog & CMS API
+  version: 1.0.0
+  summary: REST API behind the WiNK public blog and its content management system (CMS).
+  description: |
+    One API, two clients, one `posts` collection:
+
+    | Base path | Client | Auth | What it exposes |
+    |---|---|---|---|
+    | `/api/v1/blog` | Public blog frontend | none | **Published** posts only, read-only. Drafts are never exposed. |
+    | `/api/v1/cms` | CMS frontend | Bearer token | All posts, drafts included: list, create, read, publish, delete. |
+
+    **Authentication.** Every CMS operation, reads included, requires
+    `Authorization: Bearer wink-cms-demo-token`. This is the hardcoded demo token allowed by the brief;
+    the server's `CMS_API_TOKEN` environment variable overrides it. In Swagger UI, click **Authorize**
+    and paste the token.
+
+    **Envelopes.** One post is returned as `{ "data": Post }`, a list as
+    `{ "data": Post[], "pagination": { "page", "limit", "total", "totalPages" } }`.
+
+    **Errors.** Every 4xx and 5xx response (except the `/health` 503 body) is
+    `{ "error": { "code", "message", "details", "requestId" } }`, where `details` is present only for
+    `VALIDATION_ERROR` and lists every problem with its `location`, `field` and `code`. Branch on the
+    HTTP status plus `error.code`; `message` is human-readable English and may change.
+
+    | Status | `error.code` | When |
+    |---|---|---|
+    | 400 | `VALIDATION_ERROR` | Invalid path id, query string or body |
+    | 400 | `INVALID_JSON` | Malformed JSON body |
+    | 400 | `BAD_REQUEST` | Request that cannot be read at all: a path that is not valid percent-encoding, a corrupt compressed body |
+    | 401 | `UNAUTHORIZED` | Missing, malformed or wrong bearer token (CMS only) |
+    | 404 | `POST_NOT_FOUND` | Unknown or deleted id, or a draft requested through the Blog API |
+    | 404 | `ROUTE_NOT_FOUND` | No such endpoint |
+    | 405 | `METHOD_NOT_ALLOWED` | Known path, unsupported method (see the `Allow` header) |
+    | 413 | `PAYLOAD_TOO_LARGE` | JSON body larger than 256 kB |
+    | 415 | `UNSUPPORTED_MEDIA_TYPE` | Body is not `application/json`, or has an unsupported charset or `Content-Encoding` |
+    | 500 | `INTERNAL_ERROR` | Unexpected failure; no internal details are returned |
+    | 503 | `SERVICE_UNAVAILABLE` | Database unreachable; retry after `Retry-After` seconds |
+
+    **Conventions.**
+
+    - JSON in and out (UTF-8). Unknown query parameters and body fields are rejected with 400, never
+      silently ignored.
+    - `id` is a 24-character hexadecimal ObjectId: a malformed id is a 400, an unknown one a 404.
+      Timestamps are ISO-8601 UTC strings.
+    - Every response carries `X-Request-Id` (a valid inbound value is echoed, otherwise a UUID is
+      generated); error bodies repeat it as `error.requestId`.
+    - Every CMS response, errors included, carries `Cache-Control: no-store`.
+    - `HEAD` is served wherever `GET` is. On the Blog and CMS paths, any other unsupported method returns
+      405 with an `Allow` header; on CMS paths the token is checked first, so a request without it gets
+      401. Unknown paths return 404 `ROUTE_NOT_FOUND`.
+    - CORS is enabled for browser clients: `Authorization`, `Content-Type` and `X-Request-Id` may be sent,
+      `Location` and `X-Request-Id` are readable. Preflight (`OPTIONS`) requests never need the token.
+servers:
+  - url: http://localhost:3000
+    description: Local (`npm run dev` or `docker compose up`)
+tags:
+  - name: Blog
+    description: >-
+      Public, read-only API for the blog frontend. Only published posts are visible; a draft is
+      indistinguishable from a missing post (404).
+  - name: CMS
+    description: >-
+      Content management API for editors. Every call, reads included, requires the bearer token, and every
+      response carries `Cache-Control: no-store`.
+  - name: Ops
+    description: >-
+      Health check and this API description, as JSON and as Swagger UI (`/docs/`; `/` and `/docs`
+      redirect there).
+
+paths:
+  /api/v1/blog/posts:
+    get:
+      tags: [Blog]
+      operationId: listPublishedPosts
+      summary: List published posts
+      description: |
+        Published posts only (drafts never appear), newest first: sorted by `publishedAt` descending,
+        then `id` descending as a tie-break, so pages are stable.
+
+        Optional hashtag filter (`hashtags` + `match`) and pagination (`page`, `limit`). Unknown query
+        parameters are rejected with 400. A page past the end returns 200 with an empty `data` array.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Hashtags'
+        - $ref: '#/components/parameters/Match'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of published posts.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostListEnvelope'
+              examples:
+                firstPage:
+                  $ref: '#/components/examples/BlogPostList'
+                pastTheEnd:
+                  $ref: '#/components/examples/EmptyPostList'
+        '400':
+          $ref: '#/components/responses/InvalidQuery'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: Any method other than GET or HEAD on this path (`Allow` is `GET, HEAD`).
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/blog/posts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    get:
+      tags: [Blog]
+      operationId: getPublishedPost
+      summary: Get a published post
+      description: >-
+        Returns one published post. A draft gets exactly the same 404 as a missing post, so the Blog API
+        never reveals that a draft exists.
+      security: []
+      responses:
+        '200':
+          description: The published post.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostEnvelope'
+              examples:
+                published:
+                  $ref: '#/components/examples/PublishedPost'
+        '400':
+          $ref: '#/components/responses/InvalidPostId'
+        '404':
+          $ref: '#/components/responses/PostNotFound'
+          description: >-
+            No published post has this id: it never existed, was deleted, or is still a draft.
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: Any method other than GET or HEAD on this path (`Allow` is `GET, HEAD`).
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/cms/posts:
+    get:
+      tags: [CMS]
+      operationId: listPosts
+      summary: List all posts (drafts included)
+      description: |
+        All posts in any status, newest created first: sorted by `createdAt` descending, then `id`
+        descending as a tie-break.
+
+        Optional `status` filter, hashtag filter (`hashtags` + `match`) and pagination (`page`, `limit`).
+        Unknown query parameters are rejected with 400. Tip: `?status=draft&limit=1` returns the number of
+        drafts in `pagination.total`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Hashtags'
+        - $ref: '#/components/parameters/Match'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of posts, drafts included.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostListEnvelope'
+              examples:
+                firstPage:
+                  $ref: '#/components/examples/CmsPostList'
+        '400':
+          $ref: '#/components/responses/InvalidQuery'
+          description: >-
+            Invalid query string: an unknown parameter, or an invalid `status`, `hashtags`, `match`, `page`
+            or `limit` (`VALIDATION_ERROR`, `location` is `query`).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: >-
+            Any method other than GET, HEAD or POST on this path (`Allow` is `GET, HEAD, POST`). Sent only
+            to authenticated requests; others get 401.
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      tags: [CMS]
+      operationId: createPost
+      summary: Create a post
+      description: |
+        Creates a post authored by **Brian Fox**, always: the author is set by the server, not sent by
+        the client.
+
+        - `status` defaults to `draft`. Creating with `"status": "published"` publishes immediately and
+          sets `publishedAt`.
+        - `hashtags` are normalized (trim, strip one leading `#`, Unicode NFC, lower-case) and
+          de-duplicated, keeping the first occurrence.
+        - The body must be a JSON object with only the fields below. Any other key (`author`,
+          `publishedAt`, `id`, `createdAt`, ...) is a 400 with detail code `unknown_field`.
+        - Requires `Content-Type: application/json`. A request without a body is validated as `{}`, so it
+          gets a 400 listing the missing fields.
+
+        Responds 201 with the new post and a `Location` header pointing at its CMS URL. Not idempotent:
+        every successful call creates a new post.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+            examples:
+              draft:
+                summary: A draft (status omitted, so it defaults to draft)
+                value:
+                  title: Indexing strategies in MongoDB
+                  body: 'Compound indexes follow the ESR rule: equality, sort, range.'
+                  hashtags: ['#MongoDB', mongodb, Performance]
+              published:
+                summary: Published immediately
+                value:
+                  title: Hello Express 5
+                  body: Plain text or Markdown, returned verbatim.
+                  hashtags: [NodeJS, '#express']
+                  status: published
+      responses:
+        '201':
+          description: The created post.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostEnvelope'
+              examples:
+                draft:
+                  summary: Created as a draft (hashtags normalized and de-duplicated)
+                  value:
+                    data:
+                      id: '674f2a10b1c2d3e4f5a6b7d1'
+                      title: Indexing strategies in MongoDB
+                      body: 'Compound indexes follow the ESR rule: equality, sort, range.'
+                      hashtags: [mongodb, performance]
+                      status: draft
+                      author: Brian Fox
+                      publishedAt: null
+                      createdAt: '2026-11-14T11:30:00.000Z'
+                      updatedAt: '2026-11-14T11:30:00.000Z'
+                published:
+                  summary: Created as published (publishedAt set at creation)
+                  value:
+                    data:
+                      id: '674f1c2ab1c2d3e4f5a6b7c8'
+                      title: Hello Express 5
+                      body: Plain text or Markdown, returned verbatim.
+                      hashtags: [nodejs, express]
+                      status: published
+                      author: Brian Fox
+                      publishedAt: '2026-11-14T10:00:00.000Z'
+                      createdAt: '2026-11-14T10:00:00.000Z'
+                      updatedAt: '2026-11-14T10:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/InvalidBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: >-
+            Any method other than GET, HEAD or POST on this path (`Allow` is `GET, HEAD, POST`). Sent only
+            to authenticated requests; others get 401.
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/cms/posts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    get:
+      tags: [CMS]
+      operationId: getPost
+      summary: Get a post (any status)
+      description: Returns one post in any status, drafts included.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The post.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostEnvelope'
+              examples:
+                draft:
+                  $ref: '#/components/examples/DraftPost'
+                published:
+                  $ref: '#/components/examples/PublishedPost'
+        '400':
+          $ref: '#/components/responses/InvalidPostId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PostNotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: >-
+            Any method other than GET, HEAD or DELETE on this path (`Allow` is `GET, HEAD, DELETE`). There
+            is no edit endpoint, so PUT and PATCH get 405. Sent only to authenticated requests; others get
+            401.
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      tags: [CMS]
+      operationId: deletePost
+      summary: Delete a post
+      description: >-
+        Permanently deletes a post in any status (hard delete). A deleted published post disappears from
+        the Blog API immediately. Deleting it again returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Deleted. No response body.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+        '400':
+          $ref: '#/components/responses/InvalidPostId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PostNotFound'
+          description: No post has this id (it never existed or was already deleted).
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: >-
+            Any method other than GET, HEAD or DELETE on this path (`Allow` is `GET, HEAD, DELETE`). There
+            is no edit endpoint, so PUT and PATCH get 405. Sent only to authenticated requests; others get
+            401.
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/cms/posts/{id}/publish:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    post:
+      tags: [CMS]
+      operationId: publishPost
+      summary: Publish a post
+      description: |
+        Publishes a draft in one atomic step: `status` becomes `published` and `publishedAt` is set to the
+        current time.
+
+        **Idempotent.** Publishing an already-published post returns 200 with the post unchanged (the
+        original `publishedAt` is kept), so retries and double clicks are safe and concurrent calls all
+        return the same `publishedAt`. Publishing is one-way: there is no unpublish.
+
+        Takes no request body: anything sent is ignored, whatever its `Content-Type`.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The published post (unchanged if it was already published).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostEnvelope'
+              examples:
+                published:
+                  $ref: '#/components/examples/PublishedPost'
+        '400':
+          $ref: '#/components/responses/InvalidPostId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PostNotFound'
+          description: No post has this id (it never existed or was deleted).
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+          description: >-
+            Any method other than POST on this path (`Allow` is `POST`). Sent only to authenticated
+            requests; others get 401.
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /health:
+    get:
+      tags: [Ops]
+      operationId: getHealth
+      summary: Health check
+      description: >-
+        Liveness and database status, for container health checks, load balancers and monitors. Requests
+        to it are not logged. Returns 200 when MongoDB is connected and 503 otherwise; both bodies use the
+        `HealthStatus` shape, not the error envelope.
+      security: []
+      responses:
+        '200':
+          description: The API is up and connected to MongoDB.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              examples:
+                up:
+                  summary: Healthy
+                  value:
+                    status: ok
+                    database: up
+        '503':
+          description: The API is running but cannot reach MongoDB.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              examples:
+                down:
+                  summary: Database unreachable
+                  value:
+                    status: unavailable
+                    database: down
+
+  /api/v1/openapi.json:
+    get:
+      tags: [Ops]
+      operationId: getOpenApiDocument
+      summary: OpenAPI document (JSON)
+      description: >-
+        This contract as JSON, loaded from `docs/openapi.yaml` at startup. Point client code generators at
+        it, e.g. `npx openapi-typescript http://localhost:3000/api/v1/openapi.json -o api.d.ts`.
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI 3.1 document.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [openapi, info, paths]
+                properties:
+                  openapi:
+                    type: string
+                    const: 3.1.0
+
+  /docs/:
+    get:
+      tags: [Ops]
+      operationId: getSwaggerUi
+      summary: Interactive documentation (Swagger UI)
+      description: >-
+        This contract rendered by Swagger UI, for humans: browse the operations and try them out (click
+        **Authorize** and paste the demo token for the CMS ones). `/docs` redirects here (301).
+      security: []
+      responses:
+        '200':
+          description: The Swagger UI page.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /:
+    get:
+      tags: [Ops]
+      operationId: redirectToDocs
+      summary: Redirect to the documentation
+      description: Sends a browser opened on the server root to Swagger UI.
+      security: []
+      responses:
+        '302':
+          description: Redirect to `/docs` (which in turn redirects to `/docs/`).
+          headers:
+            Location:
+              description: Always `/docs`.
+              required: true
+              schema:
+                type: string
+                const: /docs
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Hardcoded demo token (Note 1 of the brief): **`wink-cms-demo-token`**.
+
+        Send `Authorization: Bearer wink-cms-demo-token` on every `/api/v1/cms` request, reads included.
+        The scheme name is case-insensitive; the token is never accepted in the query string. Deployments
+        override the expected token with the `CMS_API_TOKEN` environment variable (at least 16
+        characters). In Swagger UI, click **Authorize** and paste the token without the `Bearer ` prefix.
+
+        401 responses carry `WWW-Authenticate: Bearer realm="cms"` when the header is missing or
+        malformed, and `Bearer realm="cms", error="invalid_token"` when the token is wrong.
+
+  parameters:
+    PostId:
+      name: id
+      in: path
+      required: true
+      description: >-
+        Post id: a 24-character hexadecimal MongoDB ObjectId, as returned in `data.id`. Anything else is
+        rejected with 400 `VALIDATION_ERROR` (`location` is `params`, `field` is `id`), never a 404 or a
+        500.
+      schema:
+        type: string
+        pattern: '^[0-9a-fA-F]{24}$'
+      example: '674f1c2ab1c2d3e4f5a6b7c8'
+    Page:
+      name: page
+      in: query
+      required: false
+      description: >-
+        1-based page number, digits only, from 1 to 1000. A malformed (`abc`, `1.5`, `1e2`, empty),
+        out-of-range or repeated value is rejected with 400, never clamped. A page past the end returns
+        an empty `data` array.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: >-
+        Page size, digits only, from 1 to 50. A malformed, out-of-range or repeated value is rejected with
+        400, never clamped.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+    Hashtags:
+      name: hashtags
+      in: query
+      required: false
+      style: form
+      explode: true
+      description: |
+        Only posts tagged with these hashtags, combined according to `match`.
+
+        - **Syntax.** Repeat the key (`?hashtags=nodejs&hashtags=express`), send a comma-separated list
+          (`?hashtags=nodejs,express`), or mix both: all values are merged. Empty segments are ignored, so
+          `?hashtags=` alone means no filter.
+        - **Normalization.** The rule used when posts are written: trim, strip one leading `#`, Unicode
+          NFC, lower-case. The result must be 1 to 50 letters, combining marks, digits or underscores
+          (`^[\p{L}\p{M}\p{N}_]{1,50}$`), so `#NodeJS`, `nodejs` and `NODEJS` are the same tag.
+          Duplicates are removed.
+        - **Limits.** At most 10 distinct hashtags. More, or an invalid one, is a 400 `VALIDATION_ERROR`
+          on the parameter as a whole: `location` is `query`, `field` is `hashtags`, and the detail `code`
+          is `too_big` or `invalid`.
+        - **`#` in URLs.** A raw `#` starts the URL fragment and never reaches the server: omit it, or
+          encode it as `%23` (`?hashtags=%23nodejs`).
+        - **axios.** By default axios sends arrays as `hashtags[]=a&hashtags[]=b`, which is rejected as an
+          unknown parameter. Set `paramsSerializer: { indexes: null }` to send repeated keys. `fetch` with
+          `URLSearchParams.append('hashtags', tag)` works as is.
+      schema:
+        type: array
+        maxItems: 10
+        items:
+          type: string
+      examples:
+        one:
+          summary: One hashtag
+          value: [nodejs]
+        two:
+          summary: Two hashtags (add match=all to require both)
+          value: [nodejs, express]
+    Match:
+      name: match
+      in: query
+      required: false
+      description: >-
+        How several `hashtags` combine: `any` (default) returns posts tagged with at least one of them,
+        `all` only posts tagged with every one of them. Ignored when no hashtags are given.
+      schema:
+        type: string
+        enum: [any, all]
+        default: any
+    Status:
+      name: status
+      in: query
+      required: false
+      description: Only posts in this status. Omit it to list drafts and published posts together.
+      schema:
+        type: string
+        enum: [draft, published]
+
+  headers:
+    X-Request-Id:
+      description: >-
+        Request correlation id. Echoes the inbound `X-Request-Id` header when it is 1 to 128 characters of
+        `A-Z a-z 0-9 . _ -`; otherwise a new UUID. Error bodies repeat it as `error.requestId`, so quote
+        it when reporting a problem.
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
+        examples: ['8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11']
+    Cache-Control:
+      description: >-
+        `no-store` on every response from `/api/v1/cms`, errors included: CMS responses can contain drafts
+        and must not be cached by browsers or proxies. Blog and Ops responses do not set it.
+      required: true
+      schema:
+        type: string
+        const: no-store
+    Location:
+      description: >-
+        Path of the created post (its CMS URL), readable by browser clients through CORS.
+      required: true
+      schema:
+        type: string
+        format: uri-reference
+        examples: ['/api/v1/cms/posts/674f2a10b1c2d3e4f5a6b7d1']
+    WWW-Authenticate:
+      description: >-
+        `Bearer realm="cms"` when the `Authorization` header is missing or malformed;
+        `Bearer realm="cms", error="invalid_token"` when the token is wrong.
+      required: true
+      schema:
+        type: string
+        enum: ['Bearer realm="cms"', 'Bearer realm="cms", error="invalid_token"']
+    Allow:
+      description: The methods this path supports. HEAD is served wherever GET is.
+      required: true
+      schema:
+        type: string
+        enum: ['GET, HEAD', 'GET, HEAD, POST', 'GET, HEAD, DELETE', 'POST']
+    Retry-After:
+      description: Seconds to wait before retrying. The API currently always sends `5`.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        examples: [5]
+
+  schemas:
+    Post:
+      type: object
+      description: >-
+        A blog post. Same representation on the Blog and CMS APIs, and every key is always present.
+      required: [id, title, body, hashtags, status, author, publishedAt, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId as 24 lowercase hexadecimal characters. Treat it as opaque.
+          pattern: '^[0-9a-f]{24}$'
+          examples: ['674f1c2ab1c2d3e4f5a6b7c8']
+        title:
+          type: string
+          description: Trimmed title, 1 to 200 characters (Unicode code points).
+          minLength: 1
+          maxLength: 200
+          examples: [Hello Express 5]
+        body:
+          type: string
+          description: >-
+            Exactly as submitted (not trimmed), 1 to 50,000 characters. Plain text or Markdown: the API
+            never renders or sanitizes it, so clients must escape it when rendering.
+          minLength: 1
+          maxLength: 50000
+          examples: ['Plain text or Markdown, returned verbatim.']
+        hashtags:
+          type: array
+          description: >-
+            Canonical hashtags (normalized, without `#`), in first-occurrence order, without duplicates.
+            Empty when the post has none.
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            description: >-
+              Lower-case, Unicode NFC, 1 to 50 letters, combining marks, digits or underscores.
+            minLength: 1
+            maxLength: 50
+            pattern: '^[\p{L}\p{M}\p{N}_]{1,50}$'
+          examples: [[nodejs, express]]
+        status:
+          type: string
+          description: Lifecycle state. Only `published` posts are visible through the Blog API.
+          enum: [draft, published]
+        author:
+          type: string
+          description: Always "Brian Fox". Assigned by the server; clients cannot set it.
+          const: Brian Fox
+        publishedAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            When the post was first published; `null` for drafts. Set once and never changed (publishing
+            again keeps it). The Blog feed is ordered by it.
+          examples: ['2026-11-14T10:00:00.000Z', null]
+        createdAt:
+          type: string
+          format: date-time
+          examples: ['2026-11-14T09:00:00.000Z']
+        updatedAt:
+          type: string
+          format: date-time
+          examples: ['2026-11-14T10:00:00.000Z']
+
+    PostEnvelope:
+      type: object
+      description: Envelope for a single post.
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Post'
+
+    PostListEnvelope:
+      type: object
+      description: Envelope for a page of posts.
+      required: [data, pagination]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          description: The posts on this page, in the endpoint's sort order. Empty past the last page.
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Post'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      description: Offset pagination metadata.
+      required: [page, limit, total, totalPages]
+      additionalProperties: false
+      properties:
+        page:
+          type: integer
+          description: The requested page (1-based).
+          minimum: 1
+          maximum: 1000
+        limit:
+          type: integer
+          description: The requested page size.
+          minimum: 1
+          maximum: 50
+        total:
+          type: integer
+          description: Number of posts matching the filters, across all pages.
+          minimum: 0
+        totalPages:
+          type: integer
+          description: '`ceil(total / limit)`, so 0 when `total` is 0.'
+          minimum: 0
+
+    CreatePostRequest:
+      type: object
+      description: >-
+        Fields a client may send when creating a post. Any other key (for example `author`, `publishedAt`,
+        `id`, `createdAt`) is rejected with 400 (detail code `unknown_field`, one detail per key).
+      required: [title, body]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          description: >-
+            Leading and trailing whitespace is trimmed; the trimmed title must be 1 to 200 characters
+            (Unicode code points).
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+          examples: [Hello Express 5]
+        body:
+          type: string
+          description: >-
+            1 to 50,000 characters (Unicode code points) with at least one non-whitespace character (a
+            blank body is reported with detail code `invalid`). Stored and returned verbatim (not trimmed).
+          minLength: 1
+          maxLength: 50000
+          pattern: '\S'
+          examples: ['Plain text or Markdown, returned verbatim.']
+        hashtags:
+          type: array
+          description: >-
+            Up to 10 hashtags (more is reported on `hashtags` with detail code `too_big`). Each is
+            normalized (trim, strip one leading `#`, Unicode NFC, lower-case) and must then match
+            `^[\p{L}\p{M}\p{N}_]{1,50}$`; an invalid one is reported with its index (field `hashtags.2`,
+            for example) and detail code `invalid_format`, or `invalid_type` if it is not a string.
+            Duplicates after normalization are dropped, keeping the first occurrence.
+          maxItems: 10
+          default: []
+          items:
+            type: string
+            description: A hashtag as typed, with or without a leading `#`, in any case.
+          examples: [['#NodeJS', express]]
+        status:
+          type: string
+          description: >-
+            Initial status. `published` publishes immediately and sets `publishedAt`; `draft` keeps the post
+            off the Blog API until it is published.
+          enum: [draft, published]
+          default: draft
+
+    ErrorEnvelope:
+      type: object
+      description: Body of every error response (except the `/health` 503 body).
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              description: >-
+                Stable, machine-readable error code. Branch on it together with the HTTP status.
+              enum:
+                - BAD_REQUEST
+                - VALIDATION_ERROR
+                - INVALID_JSON
+                - UNAUTHORIZED
+                - POST_NOT_FOUND
+                - ROUTE_NOT_FOUND
+                - METHOD_NOT_ALLOWED
+                - PAYLOAD_TOO_LARGE
+                - UNSUPPORTED_MEDIA_TYPE
+                - INTERNAL_ERROR
+                - SERVICE_UNAVAILABLE
+            message:
+              type: string
+              description: Human-readable English summary. Not part of the contract; it may change.
+            details:
+              type: array
+              description: >-
+                Present only when `code` is `VALIDATION_ERROR`: one entry per problem, all of them at once.
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+            requestId:
+              type: string
+              description: Same value as the `X-Request-Id` response header.
+              pattern: '^[A-Za-z0-9._-]{1,128}$'
+          if:
+            properties:
+              code:
+                const: VALIDATION_ERROR
+          then:
+            required: [details]
+          else:
+            not:
+              required: [details]
+
+    ErrorDetail:
+      type: object
+      description: One validation problem.
+      required: [location, field, code, message]
+      additionalProperties: false
+      properties:
+        location:
+          type: string
+          description: Which part of the request is invalid.
+          enum: [params, query, body]
+        field:
+          type: [string, 'null']
+          description: >-
+            Dotted path of the offending input (`title`, `hashtags.2`, `page`, `id`), or the name of an
+            unknown key. `null` when the problem concerns the whole input, for example a body that is not a
+            JSON object.
+          examples: [title, hashtags.2, null]
+        code:
+          type: string
+          description: >-
+            `required` (missing key), `unknown_field` (unrecognized key) or the validator's issue code:
+            `invalid_type`, `too_small`, `too_big`, `invalid_format`, `invalid_value`, `invalid`.
+          enum:
+            - required
+            - unknown_field
+            - invalid_type
+            - too_small
+            - too_big
+            - invalid_format
+            - invalid_value
+            - invalid
+        message:
+          type: string
+          description: Human-readable English explanation, suitable for showing next to a form field.
+
+    HealthStatus:
+      type: object
+      description: >-
+        `{ "status": "ok", "database": "up" }` with 200, or
+        `{ "status": "unavailable", "database": "down" }` with 503.
+      required: [status, database]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        database:
+          type: string
+          enum: [up, down]
+
+  responses:
+    InvalidPostId:
+      description: Malformed post id (`VALIDATION_ERROR`, `location` is `params`, `field` is `id`).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            malformedId:
+              summary: The id is not 24 hexadecimal characters
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: params
+                      field: id
+                      code: invalid_format
+                      message: id must be a 24-character hexadecimal ObjectId
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    InvalidQuery:
+      description: >-
+        Invalid query string: an unknown parameter, or an invalid `hashtags`, `match`, `page` or `limit`
+        (`VALIDATION_ERROR`, `location` is `query`).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            unknownParameter:
+              summary: Unknown query parameter (?sort=title)
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: query
+                      field: sort
+                      code: unknown_field
+                      message: sort is not an accepted field
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            invalidHashtag:
+              summary: Invalid hashtag (?hashtags=node-js)
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: query
+                      field: hashtags
+                      code: invalid
+                      message: '"node-js" is not a valid hashtag: must be 1-50 letters, digits or underscores, optionally prefixed with #'
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            tooManyHashtags:
+              summary: More than 10 hashtags (?hashtags=a,b,c,d,e,f,g,h,i,j,k)
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: query
+                      field: hashtags
+                      code: too_big
+                      message: filter by at most 10 hashtags
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            pageOutOfRange:
+              summary: Page out of range (?page=0)
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: query
+                      field: page
+                      code: too_small
+                      message: page must be at least 1
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    InvalidBody:
+      description: >-
+        The body failed validation (`VALIDATION_ERROR`, `location` is `body`, every problem listed in
+        `details`) or is not well-formed JSON (`INVALID_JSON`).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            missingFields:
+              summary: Required fields missing (or no body at all)
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: body
+                      field: title
+                      code: required
+                      message: title is required
+                    - location: body
+                      field: body
+                      code: required
+                      message: body is required
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            unknownField:
+              summary: Client tried to set the author
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: body
+                      field: author
+                      code: unknown_field
+                      message: author is not an accepted field
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            invalidValues:
+              summary: Title too long, blank body and an invalid hashtag
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: body
+                      field: title
+                      code: too_big
+                      message: title must be at most 200 characters
+                    - location: body
+                      field: body
+                      code: invalid
+                      message: body must not be empty
+                    - location: body
+                      field: hashtags.1
+                      code: invalid_format
+                      message: hashtag must be 1-50 letters, digits or underscores, optionally prefixed with #
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            notAnObject:
+              summary: Body is a JSON array instead of an object
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - location: body
+                      field: null
+                      code: invalid_type
+                      message: 'Invalid input: expected object, received array'
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            malformedJson:
+              summary: Body is not well-formed JSON
+              value:
+                error:
+                  code: INVALID_JSON
+                  message: Request body is not valid JSON
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    Unauthorized:
+      description: >-
+        Missing, malformed or wrong bearer token (`UNAUTHORIZED`). Send
+        `Authorization: Bearer wink-cms-demo-token`.
+      headers:
+        WWW-Authenticate:
+          $ref: '#/components/headers/WWW-Authenticate'
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            missingToken:
+              summary: No Authorization header, or not in the Bearer format
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: A bearer token is required for CMS endpoints
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+            wrongToken:
+              summary: Wrong token
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: The bearer token is invalid
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    PostNotFound:
+      description: No post has this id (`POST_NOT_FOUND`).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            notFound:
+              summary: Unknown or deleted post
+              value:
+                error:
+                  code: POST_NOT_FOUND
+                  message: Post not found
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    RouteNotFound:
+      description: >-
+        No endpoint matches the path (`ROUTE_NOT_FOUND`); under `/api/v1/cms` the token is checked
+        first. Not tied to any operation above: it is what an unknown path returns.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            notFound:
+              summary: Unknown path (GET /api/v1/posts)
+              value:
+                error:
+                  code: ROUTE_NOT_FOUND
+                  message: Route GET /api/v1/posts does not exist
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    MethodNotAllowed:
+      description: >-
+        The path exists but does not support this method (`METHOD_NOT_ALLOWED`). The `Allow` header
+        lists the supported methods.
+      headers:
+        Allow:
+          $ref: '#/components/headers/Allow'
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            methodNotAllowed:
+              summary: PUT on a path that does not support it
+              value:
+                error:
+                  code: METHOD_NOT_ALLOWED
+                  message: Method PUT is not allowed on this resource
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    PayloadTooLarge:
+      description: The JSON body is larger than 256 kB (`PAYLOAD_TOO_LARGE`).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            tooLarge:
+              summary: Body over 256 kB
+              value:
+                error:
+                  code: PAYLOAD_TOO_LARGE
+                  message: Request body is too large
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    UnsupportedMediaType:
+      description: >-
+        The body is not `application/json`, or it declares an unsupported charset or `Content-Encoding`
+        (`UNSUPPORTED_MEDIA_TYPE`). Send `Content-Type: application/json` with a UTF-8 body.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            notJson:
+              summary: Body sent as text/plain
+              value:
+                error:
+                  code: UNSUPPORTED_MEDIA_TYPE
+                  message: Request body must be application/json
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    InternalError:
+      description: >-
+        Unexpected server failure (`INTERNAL_ERROR`). The message is generic; details are only logged
+        server-side, under the same request id.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            internal:
+              summary: Unexpected failure
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: An unexpected error occurred
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+    ServiceUnavailable:
+      description: >-
+        The database is unreachable (`SERVICE_UNAVAILABLE`). Retry after the number of seconds in
+        `Retry-After`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            databaseDown:
+              summary: MongoDB unreachable
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: The service is temporarily unavailable
+                  requestId: 8f14e45f-ceea-4e7a-9b6b-3c1f0b7a2d11
+
+  examples:
+    PublishedPost:
+      summary: A published post
+      value:
+        data:
+          id: '674f1c2ab1c2d3e4f5a6b7c8'
+          title: Hello Express 5
+          body: Plain text or Markdown, returned verbatim.
+          hashtags: [nodejs, express]
+          status: published
+          author: Brian Fox
+          publishedAt: '2026-11-14T10:00:00.000Z'
+          createdAt: '2026-11-14T09:00:00.000Z'
+          updatedAt: '2026-11-14T10:00:00.000Z'
+    DraftPost:
+      summary: A draft (publishedAt is null)
+      value:
+        data:
+          id: '674f2a10b1c2d3e4f5a6b7d1'
+          title: Indexing strategies in MongoDB
+          body: 'Compound indexes follow the ESR rule: equality, sort, range.'
+          hashtags: [mongodb, performance]
+          status: draft
+          author: Brian Fox
+          publishedAt: null
+          createdAt: '2026-11-14T11:30:00.000Z'
+          updatedAt: '2026-11-14T11:30:00.000Z'
+    BlogPostList:
+      summary: First page of the Blog feed (newest publishedAt first)
+      value:
+        data:
+          - id: '674f1c2ab1c2d3e4f5a6b7c8'
+            title: Hello Express 5
+            body: Plain text or Markdown, returned verbatim.
+            hashtags: [nodejs, express]
+            status: published
+            author: Brian Fox
+            publishedAt: '2026-11-14T10:00:00.000Z'
+            createdAt: '2026-11-14T09:00:00.000Z'
+            updatedAt: '2026-11-14T10:00:00.000Z'
+          - id: '674dd8a4b1c2d3e4f5a6b7b2'
+            title: Modeling posts in MongoDB
+            body: One collection, two read models.
+            hashtags: [mongodb, nodejs]
+            status: published
+            author: Brian Fox
+            publishedAt: '2026-11-13T15:00:00.000Z'
+            createdAt: '2026-11-13T14:00:00.000Z'
+            updatedAt: '2026-11-13T15:00:00.000Z'
+        pagination:
+          page: 1
+          limit: 10
+          total: 2
+          totalPages: 1
+    EmptyPostList:
+      summary: A page past the end (still 200)
+      value:
+        data: []
+        pagination:
+          page: 5
+          limit: 10
+          total: 2
+          totalPages: 1
+    CmsPostList:
+      summary: First page of the CMS list (drafts included, newest createdAt first)
+      value:
+        data:
+          - id: '674f2a10b1c2d3e4f5a6b7d1'
+            title: Indexing strategies in MongoDB
+            body: 'Compound indexes follow the ESR rule: equality, sort, range.'
+            hashtags: [mongodb, performance]
+            status: draft
+            author: Brian Fox
+            publishedAt: null
+            createdAt: '2026-11-14T11:30:00.000Z'
+            updatedAt: '2026-11-14T11:30:00.000Z'
+          - id: '674f1c2ab1c2d3e4f5a6b7c8'
+            title: Hello Express 5
+            body: Plain text or Markdown, returned verbatim.
+            hashtags: [nodejs, express]
+            status: published
+            author: Brian Fox
+            publishedAt: '2026-11-14T10:00:00.000Z'
+            createdAt: '2026-11-14T09:00:00.000Z'
+            updatedAt: '2026-11-14T10:00:00.000Z'
+          - id: '674dd8a4b1c2d3e4f5a6b7b2'
+            title: Modeling posts in MongoDB
+            body: One collection, two read models.
+            hashtags: [mongodb, nodejs]
+            status: published
+            author: Brian Fox
+            publishedAt: '2026-11-13T15:00:00.000Z'
+            createdAt: '2026-11-13T14:00:00.000Z'
+            updatedAt: '2026-11-13T15:00:00.000Z'
+        pagination:
+          page: 1
+          limit: 10
+          total: 3
+          totalPages: 1
