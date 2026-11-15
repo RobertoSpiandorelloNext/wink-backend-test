@@ -53,8 +53,8 @@ info:
     - CORS is enabled for browser clients: `Authorization`, `Content-Type` and `X-Request-Id` may be sent,
       `Location` and `X-Request-Id` are readable. Preflight (`OPTIONS`) requests never need the token.
 servers:
-  - url: http://localhost:3000
-    description: Local (`npm run dev` or `docker compose up`)
+  - url: /
+    description: The host serving this document (http://localhost:3000 when running locally)
 tags:
   - name: Blog
     description: >-

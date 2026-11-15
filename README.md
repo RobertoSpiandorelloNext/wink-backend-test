@@ -4,7 +4,7 @@ REST API behind a public blog and its content management system (CMS), written f
 
 A PDF walkthrough of what the system does and why it is built this way is available in [English](docs/technical-documentation-en.pdf) and [Italian](docs/documentazione-tecnica-it.pdf).
 
-- **Run it:** [Quick start with Docker](#quick-start-with-docker) | [Local development](#local-development)
+- **Run it:** [Quick start with Docker](#quick-start-with-docker) | [Local development](#local-development) | [CodeSandbox](#codesandbox)
 - **Use it (client teams):** [Authentication](#authentication) | [API reference](#api-reference) | [A 5-minute curl tour](#a-5-minute-curl-tour)
 - **Review it:** [Requirements traceability](#requirements-traceability) | [Implicit requirements and design decisions](#implicit-requirements-and-design-decisions) | [Ambiguities and how they were resolved](#ambiguities-and-how-they-were-resolved) | [Out of scope and next steps](#out-of-scope-and-next-steps) | [Architecture](#architecture) | [Testing](#testing)
 - **Reference:** [npm scripts](#npm-scripts) | [Configuration](#configuration)
@@ -55,6 +55,10 @@ npm run seed                # sample posts; npm run seed -- --reset replaces exi
 ```
 
 On Windows PowerShell, copy the file with `Copy-Item .env.example .env`. To use another MongoDB, set `MONGODB_URI`. To run the compiled build instead of watch mode: `npm run build && npm start`.
+
+## CodeSandbox
+
+The API also runs in a CodeSandbox VM Sandbox created from the GitHub repository: open `https://githubbox.com/<owner>/<repo>`, or choose "Import template" in the dashboard's import dialog and paste the repository URL. `.devcontainer/` starts Node.js 22 next to a `mongo:8.2` service, and `.codesandbox/tasks.json` installs the dependencies, starts `npm run dev` on port 3000 and loads the sample posts. No environment variable is needed: the defaults apply, including the demo CMS token. The preview opens on Swagger UI, and its "Try it out" requests go to the host serving the page.
 
 ## Authentication
 

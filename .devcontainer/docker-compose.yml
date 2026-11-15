@@ -1,0 +1,25 @@
+# Development environment used by CodeSandbox: the API runs in the app container (Node.js 22)
+# and stores its data in the mongo service.
+
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:22
+    volumes:
+      - ../..:/workspaces
+    # Keeps the container running; the API itself is started by the editor's tasks.
+    command: sleep infinity
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/wink-blog
+      # The tests download their own mongod the first time they run; no need to fetch it on install.
+      MONGOMS_DISABLE_POSTINSTALL: '1'
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:8.2
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
