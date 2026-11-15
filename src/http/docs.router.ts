@@ -15,12 +15,14 @@ export function loadOpenApiDocument(): Record<string, unknown> {
   return cachedDocument;
 }
 
+const OPENAPI_JSON_PATH = '/api/v1/openapi.json';
+
 /** Serves the contract as JSON (for codegen and API clients) and as interactive Swagger UI. */
 export function createDocsRouter(): Router {
   const document = loadOpenApiDocument();
   const router = Router();
 
-  router.get('/api/v1/openapi.json', (_req, res) => {
+  router.get(OPENAPI_JSON_PATH, (_req, res) => {
     res.json(document);
   });
 
@@ -30,9 +32,12 @@ export function createDocsRouter(): Router {
   router.use('/docs', swaggerUi.serve);
   router.get(
     '/docs/',
-    swaggerUi.setup(document, {
+    // Swagger UI fetches the contract from the JSON endpoint. Passing the document to setup()
+    // would embed it in swagger-ui-init.js through String.replace, which treats sequences such
+    // as "$`" in the descriptions as replacement patterns and breaks the generated script.
+    swaggerUi.setup(undefined, {
       customSiteTitle: 'WiNK Blog & CMS API',
-      swaggerOptions: { persistAuthorization: true },
+      swaggerOptions: { url: OPENAPI_JSON_PATH, persistAuthorization: true },
     }),
   );
 

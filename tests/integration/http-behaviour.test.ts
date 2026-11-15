@@ -1,3 +1,5 @@
+import { Script } from 'node:vm';
+
 import request, { type Response } from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -333,6 +335,15 @@ describe('operations endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.type).toBe('text/html');
     expect(res.text).toContain('swagger-ui');
+  });
+
+  it('GET /docs/swagger-ui-init.js is valid JavaScript that loads the served contract', async () => {
+    const res = await request(app).get('/docs/swagger-ui-init.js').buffer(true);
+
+    expect(res.status).toBe(200);
+    // A syntax error here leaves the page blank in the browser while /docs/ still answers 200.
+    expect(() => new Script(res.text)).not.toThrow();
+    expect(res.text).toContain('/api/v1/openapi.json');
   });
 
   it('GET /docs leads to Swagger UI', async () => {
