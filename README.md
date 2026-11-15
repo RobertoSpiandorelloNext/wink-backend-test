@@ -2,6 +2,8 @@
 
 REST API behind a public blog and its content management system (CMS), written for the WiNK backend test. In short: run `docker compose up --build`, open http://localhost:3000/docs, click **Authorize** and paste `wink-cms-demo-token`.
 
+A PDF walkthrough of what the system does and why it is built this way is available in [English](docs/technical-documentation-en.pdf) and [Italian](docs/documentazione-tecnica-it.pdf).
+
 - **Run it:** [Quick start with Docker](#quick-start-with-docker) | [Local development](#local-development)
 - **Use it (client teams):** [Authentication](#authentication) | [API reference](#api-reference) | [A 5-minute curl tour](#a-5-minute-curl-tour)
 - **Review it:** [Requirements traceability](#requirements-traceability) | [Implicit requirements and design decisions](#implicit-requirements-and-design-decisions) | [Ambiguities and how they were resolved](#ambiguities-and-how-they-were-resolved) | [Out of scope and next steps](#out-of-scope-and-next-steps) | [Architecture](#architecture) | [Testing](#testing)
@@ -453,6 +455,8 @@ src/
   scripts/seed.ts                       sample data
 docs/
   openapi.yaml                          OpenAPI 3.1 contract, served at /docs
+  technical-documentation-en.pdf        what the system does and why (English)
+  documentazione-tecnica-it.pdf         the same document in Italian
 tests/
   global-setup.ts                       one in-memory MongoDB per test run
   helpers/                              test database, createTestApp(), post factories

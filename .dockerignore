@@ -15,3 +15,5 @@ tests
 Dockerfile
 docker-compose.yml
 .dockerignore
+# The PDF documentation is for readers of the repository, not for the running service.
+docs/*.pdf
