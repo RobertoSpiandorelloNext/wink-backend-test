@@ -1,0 +1,17 @@
+# The Dockerfile copies only what it needs; this keeps the build context small and free of
+# local state (installed modules, build output, secrets).
+node_modules
+dist
+coverage
+tests
+.git
+.github
+.env
+.env.*
+.vscode
+.idea
+*.log
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore

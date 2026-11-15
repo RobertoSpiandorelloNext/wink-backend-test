@@ -1,0 +1,40 @@
+# Local stack: MongoDB plus the API built from this repository.
+#   docker compose up --build    API on http://localhost:3000 (Swagger UI at /docs)
+#   docker compose up -d mongo   MongoDB only, on localhost:27017, for `npm run dev` on the host
+# The ${VAR:-default} values can be overridden from the shell or a local .env file.
+
+services:
+  mongo:
+    image: mongo:8.2
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build: .
+    # tini as PID 1: forwards SIGTERM to node (graceful shutdown) and reaps zombie processes.
+    init: true
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/wink-blog
+      CMS_API_TOKEN: ${CMS_API_TOKEN:-wink-cms-demo-token}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '3000:3000'
+
+volumes:
+  mongo-data:
