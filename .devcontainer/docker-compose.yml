@@ -5,7 +5,8 @@ services:
   app:
     image: mcr.microsoft.com/devcontainers/javascript-node:22
     volumes:
-      - ../..:/workspaces
+      # CodeSandbox's default workspace path; it does not expand devcontainer.json variables.
+      - ..:/workspaces/workspace
     # Keeps the container running; the API itself is started by the editor's tasks.
     command: sleep infinity
     environment:

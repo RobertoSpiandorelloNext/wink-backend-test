@@ -2,5 +2,5 @@
   "name": "WiNK Blog API",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
-  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+  "workspaceFolder": "/workspaces/workspace"
 }
