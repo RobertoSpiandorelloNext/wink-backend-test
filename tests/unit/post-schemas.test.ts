@@ -8,6 +8,7 @@ import {
   MAX_PAGE_SIZE,
 } from '../../src/http/pagination.js';
 import { parseInput } from '../../src/http/validation.js';
+import { JSON_BODY_LIMIT_BYTES } from '../../src/posts/cms.router.js';
 import {
   AUTHOR_NAME,
   BODY_MAX_LENGTH,
@@ -58,7 +59,7 @@ const ELEVEN_HASHTAGS = Array.from({ length: 11 }, (_, index) => `tag${index}`);
 /** U+1F600, outside the BMP: one character, two UTF-16 code units. */
 const EMOJI = '😀';
 
-describe('specification constants', () => {
+describe('limits and defaults', () => {
   it('match the documented limits and defaults', () => {
     expect({ TITLE_MAX_LENGTH, BODY_MAX_LENGTH, HASHTAG_MAX_LENGTH, HASHTAGS_MAX_ITEMS }).toEqual({
       TITLE_MAX_LENGTH: 200,
@@ -74,6 +75,24 @@ describe('specification constants', () => {
     });
     expect(AUTHOR_NAME).toBe('Brian Fox');
     expect(POST_STATUSES).toEqual(['draft', 'published']);
+  });
+
+  it('fit the largest valid post within the JSON body limit', () => {
+    const largestPost = {
+      title: EMOJI.repeat(TITLE_MAX_LENGTH),
+      body: EMOJI.repeat(BODY_MAX_LENGTH),
+      // Three-byte characters, the widest a hashtag can contain.
+      hashtags: Array.from(
+        { length: HASHTAGS_MAX_ITEMS },
+        (_, index) => `${'日'.repeat(HASHTAG_MAX_LENGTH - 1)}${index}`,
+      ),
+      status: 'published',
+    };
+
+    expect(() => parseBody(largestPost)).not.toThrow();
+    expect(Buffer.byteLength(JSON.stringify(largestPost))).toBeLessThanOrEqual(
+      JSON_BODY_LIMIT_BYTES,
+    );
   });
 });
 
