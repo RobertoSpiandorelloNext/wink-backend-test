@@ -10,7 +10,7 @@ function isValidHashtag(raw: string): boolean {
 describe('normalizeHashtag', () => {
   it('lower-cases', () => {
     expect(normalizeHashtag('NodeJS')).toBe('nodejs');
-    expect(normalizeHashtag('ÇA')).toBe('ça'); // ÇA → ça
+    expect(normalizeHashtag('ÇA')).toBe('ça'); // ÇA -> ça
   });
 
   it('trims surrounding whitespace', () => {

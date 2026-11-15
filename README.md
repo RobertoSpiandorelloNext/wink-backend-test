@@ -2,10 +2,10 @@
 
 REST API behind a public blog and its content management system (CMS), written for the WiNK backend test. In short: run `docker compose up --build`, open http://localhost:3000/docs, click **Authorize** and paste `wink-cms-demo-token`.
 
-- **Run it:** [Quick start with Docker](#quick-start-with-docker) · [Local development](#local-development)
-- **Use it (client teams):** [Authentication](#authentication) · [API reference](#api-reference) · [A 5-minute curl tour](#a-5-minute-curl-tour)
-- **Review it:** [Requirements traceability](#requirements-traceability) · [Implicit requirements and design decisions](#implicit-requirements-and-design-decisions) · [Ambiguities and how they were resolved](#ambiguities-and-how-they-were-resolved) · [Out of scope and next steps](#out-of-scope-and-next-steps) · [Architecture](#architecture) · [Testing](#testing)
-- **Reference:** [npm scripts](#npm-scripts) · [Configuration](#configuration)
+- **Run it:** [Quick start with Docker](#quick-start-with-docker) | [Local development](#local-development)
+- **Use it (client teams):** [Authentication](#authentication) | [API reference](#api-reference) | [A 5-minute curl tour](#a-5-minute-curl-tour)
+- **Review it:** [Requirements traceability](#requirements-traceability) | [Implicit requirements and design decisions](#implicit-requirements-and-design-decisions) | [Ambiguities and how they were resolved](#ambiguities-and-how-they-were-resolved) | [Out of scope and next steps](#out-of-scope-and-next-steps) | [Architecture](#architecture) | [Testing](#testing)
+- **Reference:** [npm scripts](#npm-scripts) | [Configuration](#configuration)
 
 ## Overview
 
@@ -127,8 +127,8 @@ Same shape on both namespaces; every key is always present:
 
 | Field      | Type     | Rules                                                                                                   | Default  |
 | ---------- | -------- | ------------------------------------------------------------------------------------------------------- | -------- |
-| `title`    | string   | Trimmed; 1–200 characters                                                                               | required |
-| `body`     | string   | 1–50,000 characters, at least one of them non-whitespace; stored verbatim (not trimmed)                 | required |
+| `title`    | string   | Trimmed; 1-200 characters                                                                               | required |
+| `body`     | string   | 1-50,000 characters, at least one of them non-whitespace; stored verbatim (not trimmed)                 | required |
 | `hashtags` | string[] | At most 10; each normalized as in the [hashtag filter](#hashtag-filter); duplicates dropped, first kept | `[]`     |
 | `status`   | string   | `draft` or `published`; `published` publishes immediately and sets `publishedAt`                        | `draft`  |
 
@@ -155,8 +155,8 @@ This creates a draft with `"hashtags": ["mongodb", "performance"]`.
 
 | Query parameter | Default | Allowed                     |
 | --------------- | ------- | --------------------------- |
-| `page`          | 1       | Integer 1–1000, digits only |
-| `limit`         | 10      | Integer 1–50, digits only   |
+| `page`          | 1       | Integer 1-1000, digits only |
+| `limit`         | 10      | Integer 1-50, digits only   |
 
 Malformed (`abc`, `1.5`, `1e2`, empty), out-of-range or repeated (`?page=1&page=2`) values are a 400, never silently clamped. Unknown query parameters are a 400 as well.
 
@@ -166,7 +166,7 @@ Available on both lists, `GET /api/v1/blog/posts` and `GET /api/v1/cms/posts`.
 
 - **Syntax:** comma-separated (`?hashtags=nodejs,express`), repeated keys (`?hashtags=nodejs&hashtags=express`), or both (values are merged). Empty segments are ignored, so `?hashtags=` alone means no filter.
 - **Matching:** `match=any` (default) returns posts with at least one of the hashtags, `match=all` only posts with all of them. `match` is ignored when no hashtags are given.
-- **Normalization:** the same rule used when posts are written: trim, strip one leading `#`, Unicode NFC, lower-case. The result must be 1–50 letters, combining marks, digits or underscores (`^[\p{L}\p{M}\p{N}_]{1,50}$`), so `#NodeJS`, `nodejs` and `NODEJS` are the same tag. Duplicates are dropped.
+- **Normalization:** the same rule used when posts are written: trim, strip one leading `#`, Unicode NFC, lower-case. The result must be 1-50 letters, combining marks, digits or underscores (`^[\p{L}\p{M}\p{N}_]{1,50}$`), so `#NodeJS`, `nodejs` and `NODEJS` are the same tag. Duplicates are dropped.
 - **Limits:** at most 10 hashtags. More, or an invalid one, is a 400 `VALIDATION_ERROR` with `location: "query"` and `field: "hashtags"`.
 - **`#` in URLs:** a raw `#` starts the URL fragment and never reaches the server. Omit it, or encode it as `%23` (`?hashtags=%23nodejs`).
 - **axios:** by default axios sends arrays as `hashtags[]=a&hashtags[]=b`, which is rejected as an unknown parameter. Set `paramsSerializer: { indexes: null }` to send repeated keys. `fetch` with `URLSearchParams` works as is:
@@ -229,7 +229,7 @@ Every 4xx and 5xx response uses one envelope (the only exception is the `/health
 - **405 + `Allow`** for a known path with an unsupported method: `GET, HEAD` on the Blog paths, `GET, HEAD, POST` on `/cms/posts`, `GET, HEAD, DELETE` on `/cms/posts/{id}` (so PUT and PATCH get 405), `POST` on `/cms/posts/{id}/publish`. On CMS paths the token is checked first, so a request without it gets 401.
 - **404 `ROUTE_NOT_FOUND`** for any other path, as JSON.
 - **CORS** is enabled for browser clients. Allowed origins come from `CORS_ORIGINS` (default `*`); methods GET, HEAD, POST and DELETE; request headers `Authorization`, `Content-Type` and `X-Request-Id`. `Location` and `X-Request-Id` are readable from JavaScript. Preflight (`OPTIONS`) requests never need the token and are cached for 10 minutes. No cookies are used.
-- **`X-Request-Id`** is on every response. A valid inbound value (1–128 characters of `A-Z a-z 0-9 . _ -`) is echoed, otherwise a UUID is generated. Error bodies and server logs carry the same id.
+- **`X-Request-Id`** is on every response. A valid inbound value (1-128 characters of `A-Z a-z 0-9 . _ -`) is echoed, otherwise a UUID is generated. Error bodies and server logs carry the same id.
 - **`Cache-Control: no-store`** is set on every CMS response, errors included, so drafts are never cached. Blog responses do not set it.
 - Security headers come from helmet; `X-Powered-By` is disabled.
 
@@ -329,7 +329,7 @@ curl -s -X POST "$BASE/cms/posts" -H "Authorization: Bearer $TOKEN" -H "Content-
 | Create a post: title, body, list of hashtags             | Strictly validated JSON body; hashtags normalized and de-duplicated                                                                    | `POST /api/v1/cms/posts`                                | `tests/integration/cms-posts.test.ts`, `tests/unit/post-schemas.test.ts`, `tests/unit/hashtag.test.ts`  |
 | Create a post: status, default draft                     | `status` is optional and defaults to `draft`; `published` publishes at creation                                                        | `POST /api/v1/cms/posts`                                | `tests/integration/cms-posts.test.ts`, `tests/unit/post-schemas.test.ts`                                |
 | Create a post: author name is always Brian Fox           | Set by the server; a client-sent `author` is rejected with 400 `unknown_field`                                                         | `POST /api/v1/cms/posts`                                | `tests/integration/cms-posts.test.ts`                                                                   |
-| Publish a post                                           | Atomic draft → published; `publishedAt` set once; idempotent                                                                           | `POST /api/v1/cms/posts/{id}/publish`                   | `tests/integration/publish-delete.test.ts`                                                              |
+| Publish a post                                           | Atomic draft -> published; `publishedAt` set once; idempotent                                                                          | `POST /api/v1/cms/posts/{id}/publish`                   | `tests/integration/publish-delete.test.ts`                                                              |
 | Delete a post                                            | Hard delete in any status; the post leaves the Blog immediately                                                                        | `DELETE /api/v1/cms/posts/{id}`                         | `tests/integration/publish-delete.test.ts`                                                              |
 | Allow readers to filter posts by hashtags                | `hashtags` (comma-separated or repeated) with `match=any` (default) or `match=all`; same normalization as writes; also on the CMS list | `GET /api/v1/blog/posts?hashtags=...`                   | `tests/integration/blog-posts.test.ts`, `tests/unit/hashtag.test.ts`, `tests/unit/post-schemas.test.ts` |
 | Note 1: hardcoded token, put in the documentation        | `Bearer wink-cms-demo-token` on every CMS call, documented in [Authentication](#authentication) and in the OpenAPI `bearerAuth` scheme | every `/api/v1/cms` route                               | `tests/integration/auth.test.ts`                                                                        |
@@ -347,8 +347,8 @@ What the brief does not say but a blog and a CMS sharing one API need, and how t
 | CMS reads are protected too              | The token guard is mounted once on the whole `/api/v1/cms` router, reads included. Every CMS response carries `Cache-Control: no-store`.                                                                             | Drafts are private. One mount point means a new CMS route cannot be left unprotected, and `no-store` keeps drafts out of browser and proxy caches. |
 | The author is not client input           | The server sets `author` to `Brian Fox` from one constant; a request that sends `author` gets a 400 `unknown_field`.                                                                                                 | Enforces the brief's invariant; silently ignoring the field would hide client bugs.                                                                |
 | The feed is ordered by publication       | `publishedAt` is set once (at creation with `status: "published"`, or on first publish) and never changes. The Blog feed sorts by `publishedAt` descending, then `_id` descending.                                   | Sorting by `createdAt` would bury an old draft published today; the `_id` tie-break keeps pages stable when timestamps collide.                    |
-| One hashtag, one spelling                | One pure function (`src/posts/hashtag.ts`) canonicalizes hashtags for writes and for filters: trim, strip one `#`, NFC, lower-case, 1–50 letters, marks, digits or underscores, de-duplicated.                       | `#NodeJS`, `nodejs` and `NODEJS` must match, or filters silently miss posts; NFC makes `caffè` the same tag however the accent was typed.          |
-| Lists are bounded                        | Offset pagination: `page` 1–1000, `limit` 1–50 (default 10), with `total` and `totalPages`. Invalid values are a 400, never clamped.                                                                                 | Response size and skip cost stay bounded; clamping would return a page the client did not ask for.                                                 |
+| One hashtag, one spelling                | One pure function (`src/posts/hashtag.ts`) canonicalizes hashtags for writes and for filters: trim, strip one `#`, NFC, lower-case, 1-50 letters, marks, digits or underscores, de-duplicated.                       | `#NodeJS`, `nodejs` and `NODEJS` must match, or filters silently miss posts; NFC makes `caffè` the same tag however the accent was typed.          |
+| Lists are bounded                        | Offset pagination: `page` 1-1000, `limit` 1-50 (default 10), with `total` and `totalPages`. Invalid values are a 400, never clamped.                                                                                 | Response size and skip cost stay bounded; clamping would return a page the client did not ask for.                                                 |
 | Queries use indexes                      | Three named compound indexes match the three query shapes, sort and tie-break included: `blog_feed`, `blog_feed_by_hashtag`, `cms_list`.                                                                             | Lists stay index scans rather than collection scans as posts accumulate.                                                                           |
 | Validation is strict and explains itself | zod validates path, query and body. Unknown fields and parameters are rejected, and every problem is reported at once with `location`, `field` and `code`.                                                           | Typos such as `?hashtag=` fail loudly; forms can map errors to fields; only typed primitives reach MongoDB, which rules out operator injection.    |
 | One error contract                       | Every error uses `{ "error": { code, message, details?, requestId } }` with a fixed list of codes, produced by a single error middleware.                                                                            | Clients branch on status and `error.code`; stack traces and internals never leak.                                                                  |
@@ -366,7 +366,7 @@ What the brief does not say but a blog and a CMS sharing one API need, and how t
 | Question                                 | Resolution                                                                                                 | Why                                                                                                              |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | A blog and a CMS: one backend or two?    | One API with two namespaces, `/api/v1/blog` and `/api/v1/cms`, over one `posts` collection.                | Same data, two audiences: one deployable and one contract, with auth and caching set per namespace.              |
-| What is a "public" post?                 | A post with `status: "published"`.                                                                         | Draft → published is the brief's only lifecycle; a separate visibility flag would duplicate it.                  |
+| What is a "public" post?                 | A post with `status: "published"`.                                                                         | Draft -> published is the brief's only lifecycle; a separate visibility flag would duplicate it.                 |
 | Can a post be created already published? | Yes. `status` is accepted at creation and defaults to `draft`; `published` sets `publishedAt` at creation. | The brief lists status among the create fields and only fixes its default.                                       |
 | Several hashtags: any or all?            | `match=any` (default) or `match=all`.                                                                      | Following a tag usually means "any"; "all" narrows a search. Both use the same index.                            |
 | Malformed id or unknown id?              | Malformed: 400 `VALIDATION_ERROR`. Well-formed but unknown: 404 `POST_NOT_FOUND`.                          | A malformed id is a client bug; an unknown id is a normal outcome (deleted post, stale link).                    |
@@ -394,7 +394,7 @@ Left out on purpose to keep to the brief, each with its upgrade path:
 
 ### Layers
 
-Requests flow router → controller → service → model:
+Requests flow router -> controller -> service -> model:
 
 | Layer      | Files                                         | Responsibility                                                                                   |
 | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -417,7 +417,7 @@ Requests flow router → controller → service → model:
 3. CORS, before any auth, so preflights never get a 401.
 4. `GET /` (redirect), `/health`, `/api/v1/openapi.json` and `/docs`.
 5. `/api/v1/blog` routes.
-6. `/api/v1/cms`: `Cache-Control: no-store` → token guard → JSON body parser (256 kB) → routes. Bodies are parsed only for authenticated requests, so a 401 wins over body errors.
+6. `/api/v1/cms`: `Cache-Control: no-store` -> token guard -> JSON body parser (256 kB) -> routes. Bodies are parsed only for authenticated requests, so a 401 wins over body errors.
 7. 404 `ROUTE_NOT_FOUND`, then the error handler.
 
 ### Project structure
@@ -425,7 +425,7 @@ Requests flow router → controller → service → model:
 ```text
 src/
   app.ts                                createApp({ config, logger }): middleware + routers, no I/O
-  server.ts                             composition root: config → logger → DB → listen → graceful shutdown
+  server.ts                             composition root: config -> logger -> DB -> listen -> graceful shutdown
   config/env.ts                         loadConfig(): validated, frozen AppConfig
   infrastructure/database.ts            connectDatabase(), disconnectDatabase(), isDatabaseConnected()
   infrastructure/logger.ts              createLogger(): pino JSON logger
@@ -447,7 +447,7 @@ src/
   posts/post.schemas.ts                 zod schemas for body, query and params
   posts/post.service.ts                 business rules + persistence (no Express)
   posts/post.presenter.ts               toPostResponse(): the only Post serializer
-  posts/post.controller.ts              parse input → call service → present, or throw HttpError
+  posts/post.controller.ts              parse input -> call service -> present, or throw HttpError
   posts/blog.router.ts                  /api/v1/blog routes
   posts/cms.router.ts                   /api/v1/cms routes
   scripts/seed.ts                       sample data
@@ -519,7 +519,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, format check, tests and bu
 | Variable        | Default                               | Rule                                                                                                     |
 | --------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `NODE_ENV`      | `development`                         | `development`, `test` or `production`                                                                    |
-| `PORT`          | `3000`                                | Integer 1–65535                                                                                          |
+| `PORT`          | `3000`                                | Integer 1-65535                                                                                          |
 | `MONGODB_URI`   | `mongodb://127.0.0.1:27017/wink-blog` | Starts with `mongodb://` or `mongodb+srv://`                                                             |
 | `CMS_API_TOKEN` | `wink-cms-demo-token`                 | At least 16 characters; the bearer token the CMS API expects                                             |
 | `CORS_ORIGINS`  | `*`                                   | `*`, or a comma-separated list of allowed origins (e.g. `http://localhost:5173,https://cms.example.com`) |
